@@ -579,11 +579,21 @@ static int charging_mode_booting(void)
 static int property_init_action(int nargs, char **args)
 {
     bool load_defaults = true;
+    bool load_recovery_defaults = false;
 
     INFO("property init\n");
+#if defined(NO_SEPARATE_RECOVERY) && defined(BOARD_CHARGING_CMDLINE_RECOVERY_VALUE)
+    /* If a device has no dedicated recovery partition, we need coexistence with
+     * the OS version of default.prop. So we will use "default.prop.recovery"
+     * for recovery instead.
+     */
+
+    if (strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_RECOVERY_VALUE) == 0)
+        load_recovery_defaults = true;
+#endif
     if (charging_mode)
         load_defaults = false;
-    property_init(load_defaults);
+    property_init(load_defaults, load_recovery_defaults);
     return 0;
 }
 
@@ -764,24 +774,36 @@ int main(int argc, char **argv)
     open_devnull_stdio();
     klog_init();
 
-    INFO("reading config file\n");
-
-    if (!charging_mode_booting())
-       init_parse_config_file("/init.rc");
-    else
-       init_parse_config_file("/lpm.rc");
-
     /* pull the kernel commandline and ramdisk properties file in */
     import_kernel_cmdline(0, import_kernel_nv);
     /* don't expose the raw commandline to nonpriv processes */
     chmod("/proc/cmdline", 0440);
+
+    INFO("reading config file\n");
+
+#if defined(NO_SEPARATE_RECOVERY) && defined(BOARD_CHARGING_CMDLINE_RECOVERY_VALUE)
+   /* Some devicess use kernel NV to identify recovery mode. We always need to use
+    * a unique config for recovery when there is no recovery partition.
+    */
+    if (strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_RECOVERY_VALUE) == 0)
+       init_parse_config_file("/recovery.rc");
+    else
+#endif
+    if (!charging_mode_booting())
+       init_parse_config_file("/init.rc");
+    else
+       init_parse_config_file("/lpm.rc");
 
     get_hardware_name(hardware, &revision);
 
     if (strcmp(bootmode, "charger") == 0 || strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_VALUE) == 0)
         charging_mode = 1;
 
+#if defined(NO_SEPARATE_RECOVERY) && defined(BOARD_CHARGING_CMDLINE_RECOVERY_VALUE)
+    if (!charging_mode_booting() && !strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_RECOVERY_VALUE) == 0) {
+#else
     if (!charging_mode_booting()) {
+#endif
          snprintf(tmp, sizeof(tmp), "/init.%s.rc", hardware);
          init_parse_config_file(tmp);
 
@@ -809,8 +831,10 @@ int main(int argc, char **argv)
     /* execute all the boot actions to get us started */
     action_for_each_trigger("init", action_add_queue_tail);
 
+#ifndef BOARD_CHARGING_CMDLINE_NEEDS_FS
     /* skip mounting filesystems in charger mode */
     if (strcmp(bootmode, "charger") != 0) {
+#endif
         action_for_each_trigger("early-fs", action_add_queue_tail);
         if (emmc_boot) {
             action_for_each_trigger("emmc-fs", action_add_queue_tail);
@@ -819,7 +843,9 @@ int main(int argc, char **argv)
         }
         action_for_each_trigger("post-fs", action_add_queue_tail);
         action_for_each_trigger("post-fs-data", action_add_queue_tail);
+#ifndef BOARD_CHARGING_CMDLINE_NEEDS_FS
     }
+#endif
 
     queue_builtin_action(property_service_init_action, "property_service_init");
     queue_builtin_action(signal_init_action, "signal_init");

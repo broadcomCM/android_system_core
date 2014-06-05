@@ -516,10 +516,13 @@ static void load_persistent_properties()
     persistent_properties_loaded = 1;
 }
 
-void property_init(bool load_defaults)
+void property_init(bool load_defaults, bool load_recovery_defaults)
 {
     init_property_area();
-    if (load_defaults)
+
+    if (load_recovery_defaults)
+        load_properties_from_file(PROP_PATH_RAMDISK_DEFAULT".recovery");
+    else if (load_defaults)
         load_properties_from_file(PROP_PATH_RAMDISK_DEFAULT);
 }
 
