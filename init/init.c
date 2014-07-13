@@ -420,7 +420,7 @@ static void import_kernel_nv(char *name, int in_qemu)
         } else if (!strcmp(name,"androidboot.mode")) {
             strlcpy(bootmode, value, sizeof(bootmode));
         /* Samsung Bootloader recovery cmdline */
-        } else if (!strcmp(name,"bootmode")) {
+        } else if (!strcmp(name,"BOOT_MODE")) {
             strlcpy(bootmode, value, sizeof(bootmode));
         } else if (!strcmp(name,"androidboot.serialno")) {
             strlcpy(serialno, value, sizeof(serialno));
@@ -717,7 +717,9 @@ int main(int argc, char **argv)
     log_init();
 
     INFO("reading config file\n");
+#ifndef BCM_HARDWARE
     init_parse_config_file("/init.rc");
+#endif
 
     /* pull the kernel commandline and ramdisk properties file in */
     import_kernel_cmdline(0);
@@ -726,15 +728,24 @@ int main(int argc, char **argv)
     /* Samsung Galaxy S: special bootmode for recovery
      * Samsung Bootloader only knows one Kernel, which has to detect
      * from bootmode if it should run recovery. */
+#ifndef BCM_HARDWARE
     if (!strcmp(bootmode, "2"))
+        init_parse_config_file("/recovery.rc");;
+    else
+#else
+    if (!strcmp(bootmode, "4"))
         init_parse_config_file("/recovery.rc");
     else
 #endif
-     {
+#endif
+    {
+#ifdef BCM_HARDWARE
+	init_parse_config_file("/init.rc");
+#endif
         get_hardware_name(hardware, &revision);
         snprintf(tmp, sizeof(tmp), "/init.%s.rc", hardware);
         init_parse_config_file(tmp);
-     }
+    }        
 
     /* Check for a target specific initialization file and read if present */
     if (access("/init.target.rc", R_OK) == 0) {
